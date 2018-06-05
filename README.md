@@ -25,7 +25,14 @@ Disconnected from FAERS database.
 
 ## Using FAERS Toolkit
 ### Removing duplicate entries
+
 We can remove duplicate entries from our database by running the following script:
+
 ```python
 python3 dbcleanup.py
 ```
+
+
+The FAERS dataset contains cases which have received multiple entries. This is because each unique submission of a case is added into FAERS, including followup reports from the same patient/drugs/adverse events combination. Thus, we are given multiple versions of a case. By the FDA's recommendation, this script removes all older versions of the case. This leaves only the latest version of each case, which represents the most current information.
+
+Note: This does not account for duplicate entries in that the same report was submitted multiple times (e.g., if both a patient and their doctor submitted a report to FAERS). The existence of such entries is an inherent flaw in FAERS which be taken into consideration.
