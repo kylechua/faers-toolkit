@@ -1,3 +1,7 @@
+from collections import Counter
+import numpy as np
+import pandas as pd
+
 # Returns a set of unique primaryIDs in database
 def getEntries(c):
     c.execute("SELECT primaryid FROM drug")
@@ -79,5 +83,71 @@ def removeDuplicates(c):
 
 # Given a list of unspecified size, return it as list of lists of n size
 def getChunks(l, n):
-        for i in range(0, len(l), n): 
-            yield l[i:i + n]
+    for i in range(0, len(l), n): 
+        yield l[i:i + n]
+
+# Returns a map of primaryIDs related to each drug
+# Key = drug
+# Value = set of related primaryIDs
+def getDrugEntries(c, drugs):
+    if not isinstance(drugs, list):
+        drugs = [ drugs ]
+    primaryids = dict()
+    print("Finding primaryIDs for drugs...")
+    c.execute("SELECT primaryid, drugname, prod_ai FROM drug")
+    for i in c:
+        primaryid = i[0]
+        drugname = str(i[1]).lower()
+        prod_ai = str(i[2]).lower()
+        for drug in drugs:
+            drug = drug.lower()
+            if drugname in drug or prod_ai in drug:
+                if drug in primaryids:
+                    primaryids[drug].add(primaryid)
+                else:
+                    primaryids[drug] = set([primaryid])
+    print("Done.")
+    return primaryids
+
+#
+def getDrugInfo(c, drugs):
+    if not isinstance(drugs, list):
+        drugs = [ drugs ]
+    ae = scanAdverseEvents(c)
+    aeMap = ae[0]
+    aeCounter = ae[1]
+    primaryids = getDrugEntries(c, drugs)
+
+    #print(countAdverseEvents(aeMap, primaryids, "acetaminophen"))
+    
+# count the adverse events in a specific list of primaryIDs
+def countAdverseEvents(aeMap, primaryids, drug):
+    aeCounts = Counter()
+    for primaryid in primaryids[drug]:
+        pid = str(primaryid)
+        if pid in aeMap:
+            for ae in aeMap[pid]:
+                aeCounts[ae] += 1
+    return aeCounts
+
+# Returns the following objects
+# aeMap: set of preferred terms specified in each primaryid
+# aeCounter: counter with frequencies of all preferred terms
+def scanAdverseEvents(c):
+    aeMap = dict()
+    aeCounter = Counter()
+    print("Scanning adverse events...")
+    c.execute("SELECT primaryid, pt FROM react")
+    for i in c:
+        primaryid = str(i[0]).lower()
+        pt = str(i[1]).lower().replace('\n', '')
+        aeCounter[pt] += 1
+        if primaryid in aeMap:
+            aeMap[primaryid].add(pt)
+        else:
+            aeMap[primaryid] = set([ pt ])
+    print("Done.")
+    return (aeMap, aeCounter)
+
+def countDrugAdverseEvents(c):
+    counter = Counter()

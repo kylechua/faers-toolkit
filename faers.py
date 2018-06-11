@@ -9,7 +9,10 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-
+    drugs = DBHelper.getDrugEntries(c, ["ibritumomab tiuxetan", "zevalin"])
+    print(len(drugs["ibritumomab tiuxetan"]))
+    print(len(drugs["zevalin"]))
+    
 
     # -------END---------
     conn.close()
