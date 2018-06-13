@@ -13,11 +13,9 @@ def getEntries(c):
 # Remove duplicate entries from the database
 def removeDuplicates(c):
     print("Removing duplicates from the database. This may take a while...")
-
     # Initial entry tally
     initialCount = len(getEntries(c))
     print("Initial entries:", initialCount)
-
     # Map primaryids to their associated caseids
     print("Scanning case information...")
     c.execute("SELECT primaryid, caseid FROM drug")
@@ -29,7 +27,6 @@ def removeDuplicates(c):
             index[caseid].add(primaryid)
         else:
             index[caseid] = set([primaryid])
-
     # Determine which entries are duplicates
     print("Finding duplicate entries...")
     todo = []
@@ -46,7 +43,6 @@ def removeDuplicates(c):
             for key in list(versions.keys()):
                 todo.append(key)
     print("Duplicates found:", len(todo))
-
     # Delete duplicates from all database tables
     print("Deleting duplicates...")
     speed = 5000
@@ -73,7 +69,6 @@ def removeDuplicates(c):
             c.execute(query)
             c.execute("COMMIT")
             print(str(counter) + "/" + str(len(todo)), "cases fixed.")
-
     # Final entry tally
     endCount = len(getEntries(c))
     deleted = initialCount - endCount
@@ -90,8 +85,6 @@ def getChunks(l, n):
 # Key = drug
 # Value = set of related primaryIDs
 def getDrugEntries(c, drugs):
-    if not isinstance(drugs, list):
-        drugs = [ drugs ]
     primaryids = dict()
     print("Finding primaryIDs for drugs...")
     c.execute("SELECT primaryid, drugname, prod_ai FROM drug")
@@ -99,31 +92,65 @@ def getDrugEntries(c, drugs):
         primaryid = i[0]
         drugname = str(i[1]).lower()
         prod_ai = str(i[2]).lower()
-        for drug in drugs:
-            drug = drug.lower()
-            if drugname in drug or prod_ai in drug:
-                if drug in primaryids:
-                    primaryids[drug].add(primaryid)
-                else:
-                    primaryids[drug] = set([primaryid])
+        for drug, names in drugs.items():
+            for name in names:
+                if name in drugname or name in prod_ai:
+                    if drug in primaryids:
+                        primaryids[drug].add(primaryid)
+                    else:
+                        primaryids[drug] = set([primaryid])
     print("Done.")
     return primaryids
 
+def drugEntryHelper(drugs, drugname, prod_ai):
+    for drug, names in drugs.items():
+        for name in names:
+            if name in drugname or name in prod_ai:
+                return True
+    return False
+
+# Reverses key/values from druglist
+def getMasterDrugList(drugs):
+    druglist = dict()
+    for drug, names in drugs.items():
+        for name in names:
+            druglist[name] = drug
+    return druglist
+
 #
 def getDrugInfo(c, drugs):
-    if not isinstance(drugs, list):
-        drugs = [ drugs ]
+    print("Generating drug information...")
+    primaryids = getDrugEntries(c, drugs)
     ae = scanAdverseEvents(c)
     aeMap = ae[0]
     aeCounter = ae[1]
-    primaryids = getDrugEntries(c, drugs)
-
-    #print(countAdverseEvents(aeMap, primaryids, "acetaminophen"))
+    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "No. of Reports"])
+    df_drug = pd.DataFrame(columns=["Drug", "No. of Reports"])
+    df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Reports"])
+    for key, value in primaryids.items():
+        print("Counting adverse events for", key, "from", len(value), "reports.")
+        drugAEs = countAdverseEvents(aeMap, value)
+        df_drug.loc[len(df_drug)] = [key, len(value)]
+        for adverseEvent in drugAEs:
+            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent]]
+    print("Building total adverse event table...")
+    for x in aeCounter:
+        key = x
+        value = aeCounter[key]
+        df_AE.loc[len(df_AE)] = [key, value]
+    print("Done.")
+    print("Saving drug information to Excel...")
+    writer = pd.ExcelWriter("testresults.xlsx")
+    df_drugAE.to_excel(writer, "Drug AE")
+    df_drug.to_excel(writer, "Drug Info")
+    df_AE.to_excel(writer, "AE Info")
+    writer.save()
+    print("All done!")
     
-# count the adverse events in a specific list of primaryIDs
-def countAdverseEvents(aeMap, primaryids, drug):
+# count the adverse events in a specific iterable of primaryIDs
+def countAdverseEvents(aeMap, primaryids):
     aeCounts = Counter()
-    for primaryid in primaryids[drug]:
+    for primaryid in primaryids:
         pid = str(primaryid)
         if pid in aeMap:
             for ae in aeMap[pid]:
@@ -134,9 +161,9 @@ def countAdverseEvents(aeMap, primaryids, drug):
 # aeMap: set of preferred terms specified in each primaryid
 # aeCounter: counter with frequencies of all preferred terms
 def scanAdverseEvents(c):
+    print("Scanning adverse events. This may take a while...")
     aeMap = dict()
     aeCounter = Counter()
-    print("Scanning adverse events...")
     c.execute("SELECT primaryid, pt FROM react")
     for i in c:
         primaryid = str(i[0]).lower()
@@ -146,8 +173,5 @@ def scanAdverseEvents(c):
             aeMap[primaryid].add(pt)
         else:
             aeMap[primaryid] = set([ pt ])
-    print("Done.")
+    print("Adverse events scanned.")
     return (aeMap, aeCounter)
-
-def countDrugAdverseEvents(c):
-    counter = Counter()

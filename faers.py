@@ -1,4 +1,4 @@
-import sqlite3
+import sqlite3, csv
 from package import dbutils as DBHelper
 
 def main():
@@ -9,14 +9,27 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = DBHelper.getDrugEntries(c, ["ibritumomab tiuxetan", "zevalin"])
-    print(len(drugs["ibritumomab tiuxetan"]))
-    print(len(drugs["zevalin"]))
+    drugs = parseDrugList('./data/testlist.csv')
+    DBHelper.getDrugInfo(c, drugs)
     
 
     # -------END---------
     conn.close()
     print("Disconnected from FAERS database.")
+
+def parseDrugList(file):
+    print("Parsing drug list...")
+    drugs = dict()
+    with open(file) as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            name = row[0]
+            drugs[name] = set()
+            for alias in row:
+                drugs[name].add(alias.lower())
+    print("Done.")
+    return drugs
+
 
 if __name__ == "__main__":
     main()

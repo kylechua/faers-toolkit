@@ -1,4 +1,5 @@
 import sqlite3
+import collections
 
 def main():
     conn = sqlite3.connect('./data/db/faers-data.sqlite')
