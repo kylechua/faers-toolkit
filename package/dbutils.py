@@ -1,6 +1,10 @@
 from collections import Counter
 import numpy as np
 import pandas as pd
+import sys
+
+import multiprocessing as mp
+from timeit import default_timer as timer
 
 # Returns a set of unique primaryIDs in database
 def getEntries(c):
@@ -85,29 +89,48 @@ def getChunks(l, n):
 # Key = drug
 # Value = set of related primaryIDs
 def getDrugEntries(c, drugs):
+    update_progress("Finding drug entries", 0)
+    start = timer()
     primaryids = dict()
-    print("Finding primaryIDs for drugs...")
+    druglist = getMasterDrugList(drugs)
+    drugset = set()
+    for key in druglist.keys():
+        drugset.add(key)
+    counter = 0
+    c.execute("SELECT COUNT(*) FROM drug")
+    total = c.fetchone()[0]
     c.execute("SELECT primaryid, drugname, prod_ai FROM drug")
     for i in c:
         primaryid = i[0]
         drugname = str(i[1]).lower()
         prod_ai = str(i[2]).lower()
-        for drug, names in drugs.items():
-            for name in names:
-                if name in drugname or name in prod_ai:
+        currName = drugname + " " + prod_ai
+        if any(substring in currName for substring in drugset):
+            for name in drugset:
+                if name in currName:
+                    drug = druglist[name]
                     if drug in primaryids:
                         primaryids[drug].add(primaryid)
                     else:
                         primaryids[drug] = set([primaryid])
-    print("Done.")
+        counter+=1
+        if counter%20000 == 0:
+            update_progress("Finding drug entries", (counter/total))
+    end = timer()
+    update_progress("Finding drug entries", 1)
+    print("Drug entries found in", (end - start), "seconds.")
     return primaryids
 
-def drugEntryHelper(drugs, drugname, prod_ai):
-    for drug, names in drugs.items():
-        for name in names:
-            if name in drugname or name in prod_ai:
-                return True
-    return False
+def worker(working_queue, output_queue):
+    while True:
+        if working_queue.empty() == True:
+            print("empty")
+            break
+        else:
+            picked = working_queue.get()
+            print(picked[0])
+            output_queue.put(picked[0])
+    return
 
 # Reverses key/values from druglist
 def getMasterDrugList(drugs):
@@ -120,36 +143,50 @@ def getMasterDrugList(drugs):
 #
 def getDrugInfo(c, drugs):
     print("Generating drug information...")
+    start = timer()
     primaryids = getDrugEntries(c, drugs)
     ae = scanAdverseEvents(c)
     aeMap = ae[0]
     aeCounter = ae[1]
-    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "No. of Reports"])
-    df_drug = pd.DataFrame(columns=["Drug", "No. of Reports"])
-    df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Reports"])
+    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "No. of Reports for this Drug"])
+    df_drug = pd.DataFrame(columns=["Drug", "No. of Total Reports"])
+    df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Total Reports"])
     for key, value in primaryids.items():
-        print("Counting adverse events for", key, "from", len(value), "reports.")
+        print("Adding", len(value), "reports for:", key)
+        update_progress(key, 0)
         drugAEs = countAdverseEvents(aeMap, value)
         df_drug.loc[len(df_drug)] = [key, len(value)]
+        total = sum(drugAEs.values())
+        counter = 0
         for adverseEvent in drugAEs:
             df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent]]
-    print("Building total adverse event table...")
+            counter += 1
+            if counter%50 == 0:
+                update_progress(key, (counter/total))
+        update_progress(key, 1)
+    update_progress("Adding Total AEs", 0)
+    total = sum(drugAEs.values())
+    counter = 0
     for x in aeCounter:
         key = x
         value = aeCounter[key]
         df_AE.loc[len(df_AE)] = [key, value]
-    print("Done.")
+        if counter%1000 == 0:
+            update_progress("Adding Total AEs", (counter/total))
+    update_progress("Adding Total AEs", 1)
     print("Saving drug information to Excel...")
-    writer = pd.ExcelWriter("testresults.xlsx")
-    df_drugAE.to_excel(writer, "Drug AE")
-    df_drug.to_excel(writer, "Drug Info")
-    df_AE.to_excel(writer, "AE Info")
+    writer = pd.ExcelWriter("./data/immunotherapyresults.xlsx")
+    df_drugAE.to_excel(writer, "Drugs and AE")
+    df_drug.to_excel(writer, "Drug Totals")
+    df_AE.to_excel(writer, "AE Totals")
     writer.save()
-    print("All done!")
+    end = timer()
+    print("All done! This program took", (end - start), "seconds.")
     
 # count the adverse events in a specific iterable of primaryIDs
 def countAdverseEvents(aeMap, primaryids):
     aeCounts = Counter()
+    primaryids = set(primaryids)
     for primaryid in primaryids:
         pid = str(primaryid)
         if pid in aeMap:
@@ -161,9 +198,13 @@ def countAdverseEvents(aeMap, primaryids):
 # aeMap: set of preferred terms specified in each primaryid
 # aeCounter: counter with frequencies of all preferred terms
 def scanAdverseEvents(c):
-    print("Scanning adverse events. This may take a while...")
+    update_progress("Scanning adverse events", 0)
+    start = timer()
     aeMap = dict()
     aeCounter = Counter()
+    c.execute("SELECT COUNT(*) FROM react")
+    total = c.fetchone()[0]
+    counter = 0
     c.execute("SELECT primaryid, pt FROM react")
     for i in c:
         primaryid = str(i[0]).lower()
@@ -173,5 +214,29 @@ def scanAdverseEvents(c):
             aeMap[primaryid].add(pt)
         else:
             aeMap[primaryid] = set([ pt ])
-    print("Adverse events scanned.")
+        counter += 1
+        if counter%20000 == 0:
+            update_progress("Scanning adverse events", (counter/total))
+    end = timer()
+    update_progress("Scanning adverse events", 1)
+    print("Adverse events scanned in", (end - start), "seconds.")
     return (aeMap, aeCounter)
+
+def update_progress(message, progress):
+    barLength = 30 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "\x1b[6;37;42mFinished!\x1b[0m\r\n"
+    block = int(round(barLength*progress))
+    text = ("\r" + message + ": {0} {1}% {2}").format( "\x1b[1;35;44m" + " "*block + "\x1b[0m" + "\x1b[0;36;47m" + " "*(barLength-block) + "\x1b[0m", str(progress*100)[:4], status)
+    sys.stdout.write(text)
+    sys.stdout.flush()

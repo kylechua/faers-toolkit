@@ -9,7 +9,7 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseDrugList('./data/testlist.csv')
+    drugs = parseDrugList('./data/druglist.csv')
     DBHelper.getDrugInfo(c, drugs)
     
 
@@ -18,7 +18,6 @@ def main():
     print("Disconnected from FAERS database.")
 
 def parseDrugList(file):
-    print("Parsing drug list...")
     drugs = dict()
     with open(file) as csvfile:
         reader = csv.reader(csvfile)
@@ -27,7 +26,7 @@ def parseDrugList(file):
             drugs[name] = set()
             for alias in row:
                 drugs[name].add(alias.lower())
-    print("Done.")
+    print("Parsed drug list.")
     return drugs
 
 
