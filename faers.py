@@ -9,7 +9,7 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseDrugList('./data/druglist.csv')
+    drugs = parseDrugList('./data/testlist.csv')
     DBHelper.getDrugInfo(c, drugs)
     
 

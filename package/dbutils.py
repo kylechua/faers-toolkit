@@ -4,6 +4,7 @@ import pandas as pd
 import sys
 
 import multiprocessing as mp
+import time
 from timeit import default_timer as timer
 
 # Returns a set of unique primaryIDs in database
@@ -148,22 +149,28 @@ def getDrugInfo(c, drugs):
     ae = scanAdverseEvents(c)
     aeMap = ae[0]
     aeCounter = ae[1]
-    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "No. of Reports for this Drug"])
+    total_AEs = sum(aeCounter.values())
+    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "Reports", "PRR"])
     df_drug = pd.DataFrame(columns=["Drug", "No. of Total Reports"])
     df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Total Reports"])
     for key, value in primaryids.items():
         print("Adding", len(value), "reports for:", key)
         update_progress(key, 0)
+        # Retrieve a Counter for each adverse event for the given drug (key)
         drugAEs = countAdverseEvents(aeMap, value)
         df_drug.loc[len(df_drug)] = [key, len(value)]
         total = sum(drugAEs.values())
         counter = 0
         for adverseEvent in drugAEs:
-            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent]]
-            counter += 1
-            if counter%50 == 0:
-                update_progress(key, (counter/total))
-        update_progress(key, 1)
+            # Get PRR
+            var_A = drugAEs[adverseEvent] # Event Y for Drug X
+            var_B = total - var_A # Other events for Drug X
+            var_C = aeCounter[adverseEvent] - var_A # Event Y for other drugs
+            var_D = total_AEs - var_A - var_B - var_C # Other events for other drugs
+            score_PRR = getPRR(var_A, var_B, var_C, var_D)
+            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent], score_PRR]
+            counter += drugAEs[adverseEvent]
+            update_progress(key, (counter/total))
     update_progress("Adding Total AEs", 0)
     total = sum(drugAEs.values())
     counter = 0
@@ -171,17 +178,31 @@ def getDrugInfo(c, drugs):
         key = x
         value = aeCounter[key]
         df_AE.loc[len(df_AE)] = [key, value]
-        if counter%1000 == 0:
+        counter += 1
+        if counter%100 == 0:
             update_progress("Adding Total AEs", (counter/total))
     update_progress("Adding Total AEs", 1)
-    print("Saving drug information to Excel...")
-    writer = pd.ExcelWriter("./data/immunotherapyresults.xlsx")
+    filename = getOutputFilename(".xlsx")
+    filename = "./data/" + filename
+    print("Saving drug information to", filename)
+    writer = pd.ExcelWriter(filename)
     df_drugAE.to_excel(writer, "Drugs and AE")
     df_drug.to_excel(writer, "Drug Totals")
     df_AE.to_excel(writer, "AE Totals")
     writer.save()
     end = timer()
     print("All done! This program took", (end - start), "seconds.")
+
+def getPRR(a, b, c, d):
+    if a == 0 or b == 0 or c == 0 or d == 0:
+        return 0
+    else:
+        return (a/float(a+b)) / (c/float(c+d))
+
+# Returns timestamp filename
+def getOutputFilename(extension):
+    timestr = time.strftime("results_%Y-%m-%d_%H%M%S")
+    return (timestr + extension)
     
 # count the adverse events in a specific iterable of primaryIDs
 def countAdverseEvents(aeMap, primaryids):
