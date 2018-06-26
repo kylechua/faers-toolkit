@@ -6,6 +6,9 @@ import cmath
 
 import multiprocessing as mp
 import time
+
+from package import sqlhelper as sqlh
+from package import progressbar as prog
 from timeit import default_timer as timer
 
 # Returns a set of unique primaryIDs in database
@@ -123,44 +126,109 @@ def getDrugEntries(c, drugs):
     print("Drug entries found in", (end - start), "seconds.")
     return primaryids
 
-# Search drugs by name
-def getDrugNameQuery(drugs):
-    query = "SELECT primaryid "
-    query += "FROM drug WHERE ("
-    first = True
-    for drug in drugs:
-        if not first:
-            query += " OR "
-        else:
-            first = False
-        query += "drug.drugname Like '%" + drug + "%'"
-        query += " OR drug.prod_ai Like '%" + drug + "%'"
-    query += ")"
-    return query
+# info
+# --[*drugname] drug (dict)
+#   --[all] all indications (dict)
+#     --[pids] primaryids (list)
+#     --[aes] adverse events (counter)
+#     --[stats] stats (dict)
+#   --[*indiname] each indication (dict)
+#     --[pids] primaryids (list)
+#     --[aes] adverse events (counter)
+#     --[stats] stats (dict)
+def getInfo(c, drugmap, indicationmap):
+    start = timer()
 
-def getIndicationQuery(indications):
-    query = "SELECT primaryid "
-    query += "FROM indication WHERE ("
-    first = True
-    for indi in indications:
-        if not first:
-            query += " OR "
-        else:
-            first = False
-        query += "indication.indi_pt Like '%" + indi + "%'"
-    query += ")"
-    return query
+    aeReference = scanAdverseEvents(c)
+    aeMap = aeReference[0]
+    aeCounter = aeReference[1]
 
-def getDrugPIDsByIndication(c, drugs, indications):
-    drugNameQuery = getDrugNameQuery(drugs)
-    indicationQuery = getIndicationQuery(indications)
-    query = drugNameQuery + " INTERSECT " + indicationQuery
+    num_drugs = len(drugmap)
+    num_indis = len(indicationmap)
+    print("Searching database")
+    drugcounter = 0
+    info = dict()
+    for drug, names in drugmap.items():
+        print("--Drug (" + str(drugcounter) + "/" + str(num_drugs) + "):", drug)
+        drugcounter += 1
+        info[drug] = dict()
+        print("  --All Indications")
+        info[drug]['all'] = getDrugInfo(c, aeMap, names)
+        print("    --primaryids:", len(info[drug]['all']['pids']))
+        print("    --adverse events: done")
+        info[drug]['all']['stats'] = getAEStats(aeCounter, info[drug]['all']['adverse events'])
+        indicounter = 0
+        for indi, indi_pts in indicationmap.items():
+            indicounter += 1
+            print("  --Indication (" + str(indicounter) + "/" + str(num_indis) + "):", indi)
+            info[drug][indi] = getDrugInfoByIndication(c, aeMap, names, indi_pts)
+            print("    --primaryids:", len(info[drug][indi]['pids']))
+            print("    --adverse events: done")
+            info[drug][indi]['stats'] = getAEStats(aeCounter, info[drug][indi]['adverse events'])
+    end = timer()
+    print("Done. Took", (end-start), "seconds.")
+
+    print(info)
+
+def getAEStats(totalAEs, drugAEs):
+    stats = dict()
+    sum_totalAE = sum(totalAEs.values())
+    for ae in drugAEs:
+        sum_drugAE = sum(drugAEs.values())
+        var_A = drugAEs[ae] # Event Y for Drug X
+        var_B = sum_drugAE - var_A # Other events for Drug X
+        var_C = totalAEs[ae] - var_A # Event Y for other drugs
+        var_D = sum_totalAE - var_A - var_B - var_C # Other events for other drugs
+
+
+# Given specified drugnames / indications
+# Return
+#   --[pids]: List of primaryIDs for the combo of drugname / indication
+#   --[aes]: Counter of 
+def getDrugInfoByIndication(c, aeMap, drugnames, indications):
     PIDs = []
+    AEs = Counter()
+
+    drugNameQuery = sqlh.selectDrug(drugnames)
+    indicationQuery = sqlh.selectIndication(indications)
+    query = drugNameQuery + " INTERSECT " + indicationQuery
     c.execute(query)
     for i in c:
-        PIDs.append(i[0])
-    return PIDs
-        
+        primaryid = i[0]
+        PIDs.append(primaryid)
+        pid = str(primaryid)
+        if pid in aeMap:
+            for ae in aeMap[pid]:
+                AEs[ae] += 1
+    info = dict()
+    info['pids'] = PIDs
+    info['aes'] = AEs
+
+    return info
+
+def getDrugInfo(c, aeMap, drugnames):
+    PIDs = []
+    AEs = Counter()
+
+    query = sqlh.selectDrug(drugnames)
+    c.execute(query)
+    for i in c:
+        primaryid = i[0]
+        PIDs.append(primaryid)
+        pid = str(primaryid)
+        if pid in aeMap:
+            for ae in aeMap[pid]:
+                AEs[ae] += 1
+    info = dict()
+    info['pids'] = PIDs
+    info['aes'] = AEs
+
+    return info
+
+# Parameter: Drug to get names from, Map of drug names
+# Returns: List of drug names for given drug
+def getDrugNameList(drug, drugmap):
+    return 
 
 # Reverses key/values from druglist for faster lookup
 def getReverseDrugList(drugs):
@@ -316,7 +384,7 @@ def countAdverseEvents(aeMap, primaryids):
 # aeMap: set of preferred terms specified in each primaryid
 # aeCounter: counter with frequencies of all preferred terms
 def scanAdverseEvents(c):
-    update_progress("Scanning adverse events", 0)
+    prog.update("Scanning adverse events", 0)
     start = timer()
     aeMap = dict()
     aeCounter = Counter()
@@ -334,10 +402,10 @@ def scanAdverseEvents(c):
             aeMap[primaryid] = set([ pt ])
         counter += 1
         if counter%20000 == 0:
-            update_progress("Scanning adverse events", (counter/total))
+            prog.update("Scanning adverse events", (counter/total))
     end = timer()
-    update_progress("Scanning adverse events", 1)
-    print("Adverse events scanned in", (end - start), "seconds.")
+    prog.update("Scanning adverse events", 1)
+    print("Completed in", (end - start), "seconds.")
     return (aeMap, aeCounter)
 
 # Returns the following objects
@@ -367,22 +435,3 @@ def scanOutcomes(c):
     update_progress("Scanning outcomes", 1)
     print("Outcomes scanned in", (end - start), "seconds.")
     return (outcomeMap, outcomeCounter)
-
-def update_progress(message, progress):
-    barLength = 30 # Modify this to change the length of the progress bar
-    status = ""
-    if isinstance(progress, int):
-        progress = float(progress)
-    if not isinstance(progress, float):
-        progress = 0
-        status = "error: progress var must be float\r\n"
-    if progress < 0:
-        progress = 0
-        status = "Halt...\r\n"
-    if progress >= 1:
-        progress = 1
-        status = "\x1b[6;37;42mFinished!\x1b[0m\r\n"
-    block = int(round(barLength*progress))
-    text = ("\r" + message + ": {0} {1}% {2}").format( "\x1b[1;35;44m" + " "*block + "\x1b[0m" + "\x1b[0;36;47m" + " "*(barLength-block) + "\x1b[0m", str(progress*100)[:4], status)
-    sys.stdout.write(text)
-    sys.stdout.flush()

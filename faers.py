@@ -9,10 +9,10 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseFile('./data/input/immunotherapy.csv')
-    indications = parseFile('./data/input/indications.csv')
+    drugs = parseFile('./data/input/test.csv')
+    indications = parseFile('./data/input/testindi.csv')
     #DBHelper.getDrugAEInfo(c, drugs)
-    DBHelper.getDrugPIDsByIndication(c, ["Nivolumab", "Opdivo"], ["Malignant melanoma"])
+    DBHelper.getInfo(c, drugs, indications)
 
     
     # REMEMBER TO ADD ALL DRUGS AS A CATEGORY
