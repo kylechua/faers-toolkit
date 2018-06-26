@@ -2,6 +2,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import sys
+import cmath
 
 import multiprocessing as mp
 import time
@@ -49,7 +50,7 @@ def removeDuplicates(c):
                 todo.append(key)
     print("Duplicates found:", len(todo))
     # Delete duplicates from all database tables
-    print("Deleting duplicates...")
+    update_progress("Deleting duplicates", 0)
     speed = 5000
     chunks = getChunks(todo, speed)
     counter = 0
@@ -58,9 +59,10 @@ def removeDuplicates(c):
         for index, primaryid in enumerate(chunk):
             counter = counter + 1
             if index == 0:
-                query = query + str(primaryid)
+                basequery = basequery + str(primaryid)
+                update_progress("Deleting duplicates", (counter/float(len(todo))))
             else:
-                query = query + ", " + str(primaryid)
+                basequery = basequery + ", " + str(primaryid)
         basequery = basequery + ")"
         queries = []
         queries.append("DELETE FROM drug" + basequery)
@@ -73,7 +75,6 @@ def removeDuplicates(c):
         for query in queries:
             c.execute(query)
             c.execute("COMMIT")
-            print(str(counter) + "/" + str(len(todo)), "cases fixed.")
     # Final entry tally
     endCount = len(getEntries(c))
     deleted = initialCount - endCount
@@ -93,7 +94,7 @@ def getDrugEntries(c, drugs):
     update_progress("Finding drug entries", 0)
     start = timer()
     primaryids = dict()
-    druglist = getMasterDrugList(drugs)
+    druglist = getReverseDrugList(drugs)
     drugset = set()
     for key in druglist.keys():
         drugset.add(key)
@@ -122,19 +123,47 @@ def getDrugEntries(c, drugs):
     print("Drug entries found in", (end - start), "seconds.")
     return primaryids
 
-def worker(working_queue, output_queue):
-    while True:
-        if working_queue.empty() == True:
-            print("empty")
-            break
+# Search drugs by name
+def getDrugNameQuery(drugs):
+    query = "SELECT primaryid "
+    query += "FROM drug WHERE ("
+    first = True
+    for drug in drugs:
+        if not first:
+            query += " OR "
         else:
-            picked = working_queue.get()
-            print(picked[0])
-            output_queue.put(picked[0])
-    return
+            first = False
+        query += "drug.drugname Like '%" + drug + "%'"
+        query += " OR drug.prod_ai Like '%" + drug + "%'"
+    query += ")"
+    return query
 
-# Reverses key/values from druglist
-def getMasterDrugList(drugs):
+def getIndicationQuery(indications):
+    query = "SELECT primaryid "
+    query += "FROM indication WHERE ("
+    first = True
+    for indi in indications:
+        if not first:
+            query += " OR "
+        else:
+            first = False
+        query += "indication.indi_pt Like '%" + indi + "%'"
+    query += ")"
+    return query
+
+def getDrugPIDsByIndication(c, drugs, indications):
+    drugNameQuery = getDrugNameQuery(drugs)
+    indicationQuery = getIndicationQuery(indications)
+    query = drugNameQuery + " INTERSECT " + indicationQuery
+    PIDs = []
+    c.execute(query)
+    for i in c:
+        PIDs.append(i[0])
+    return PIDs
+        
+
+# Reverses key/values from druglist for faster lookup
+def getReverseDrugList(drugs):
     druglist = dict()
     for drug, names in drugs.items():
         for name in names:
@@ -142,7 +171,7 @@ def getMasterDrugList(drugs):
     return druglist
 
 #
-def getDrugInfo(c, drugs):
+def getDrugAEInfo(c, drugs):
     print("Generating drug information...")
     start = timer()
     primaryids = getDrugEntries(c, drugs)
@@ -150,7 +179,7 @@ def getDrugInfo(c, drugs):
     aeMap = ae[0]
     aeCounter = ae[1]
     total_AEs = sum(aeCounter.values())
-    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "Reports", "PRR"])
+    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)"])
     df_drug = pd.DataFrame(columns=["Drug", "No. of Total Reports"])
     df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Total Reports"])
     for key, value in primaryids.items():
@@ -167,12 +196,14 @@ def getDrugInfo(c, drugs):
             var_B = total - var_A # Other events for Drug X
             var_C = aeCounter[adverseEvent] - var_A # Event Y for other drugs
             var_D = total_AEs - var_A - var_B - var_C # Other events for other drugs
+            score_Freq = getFreq(drugAEs[adverseEvent], len(value))
             score_PRR = getPRR(var_A, var_B, var_C, var_D)
-            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent], score_PRR]
+            score_ROR = getROR(var_A, var_B, var_C, var_D)
+            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent], score_Freq, score_PRR, score_ROR[0], score_ROR[1], score_ROR[2]]
             counter += drugAEs[adverseEvent]
             update_progress(key, (counter/total))
     update_progress("Adding Total AEs", 0)
-    total = sum(drugAEs.values())
+    total = sum(aeCounter.values())
     counter = 0
     for x in aeCounter:
         key = x
@@ -183,7 +214,7 @@ def getDrugInfo(c, drugs):
             update_progress("Adding Total AEs", (counter/total))
     update_progress("Adding Total AEs", 1)
     filename = getOutputFilename(".xlsx")
-    filename = "./data/" + filename
+    filename = "./data/drug-ae_" + filename
     print("Saving drug information to", filename)
     writer = pd.ExcelWriter(filename)
     df_drugAE.to_excel(writer, "Drugs and AE")
@@ -193,11 +224,77 @@ def getDrugInfo(c, drugs):
     end = timer()
     print("All done! This program took", (end - start), "seconds.")
 
+def getDrugOutcomeInfo(c, drugs):
+    print("Generating drug information...")
+    start = timer()
+    primaryids = getDrugEntries(c, drugs)
+    oc = scanOutcomes(c)
+    outcomeMap = oc[0]
+    outcomeCounter = oc[1]
+    total_OCs = sum(outcomeCounter.values())
+    df_drugOC = pd.DataFrame(columns=["Drug", "Outcome", "Reports", "PRR"])
+    df_drug = pd.DataFrame(columns=["Drug", "No. of Total Reports"])
+    df_OC = pd.DataFrame(columns=["Outcome", "No. of Total Reports"])
+    for key, value in primaryids.items():
+        print("Adding", len(value), "reports for:", key)
+        update_progress(key, 0)
+        # Retrieve a Counter for each adverse event for the given drug (key)
+        drugOCs = countAdverseEvents(outcomeMap, value)
+        df_drug.loc[len(df_drug)] = [key, len(value)]
+        total = sum(drugOCs.values())
+        counter = 0
+        for outcome in drugOCs:
+            # Get PRR
+            var_A = drugOCs[outcome] # Event Y for Drug X
+            var_B = total - var_A # Other events for Drug X
+            var_C = outcomeCounter[outcome] - var_A # Event Y for other drugs
+            var_D = total_OCs - var_A - var_B - var_C # Other events for other drugs
+            score_PRR = getPRR(var_A, var_B, var_C, var_D)
+            df_drugOC.loc[len(df_drugOC)] = [key, outcome, drugOCs[outcome], score_PRR]
+            counter += drugOCs[outcome]
+            update_progress(key, (counter/total))
+    update_progress("Adding Total OCs", 0)
+    total = sum(drugOCs.values())
+    counter = 0
+    for x in outcomeCounter:
+        key = x
+        value = outcomeCounter[key]
+        df_OC.loc[len(df_OC)] = [key, value]
+        counter += 1
+        if counter%100 == 0:
+            update_progress("Adding Total OCs", (counter/total))
+    update_progress("Adding Total OCs", 1)
+    filename = getOutputFilename(".xlsx")
+    filename = "./data/drug-oc_" + filename
+    print("Saving drug information to", filename)
+    writer = pd.ExcelWriter(filename)
+    df_drugOC.to_excel(writer, "Drugs and OC")
+    df_drug.to_excel(writer, "Drug Totals")
+    df_OC.to_excel(writer, "OC Totals")
+    writer.save()
+    end = timer()
+    print("All done! This program took", (end - start), "seconds.")
+
 def getPRR(a, b, c, d):
     if a == 0 or b == 0 or c == 0 or d == 0:
         return 0
     else:
         return (a/float(a+b)) / (c/float(c+d))
+
+def getROR(a, b, c, d):
+    if a == 0 or b == 0 or c == 0 or d == 0:
+        return [0, 0, 0]
+    else:
+        ROR = (a/float(c)) / (b/float(d))
+        UpperCI = cmath.exp( cmath.log(ROR) + 1.96*cmath.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
+        LowerCI = cmath.exp( cmath.log(ROR) - 1.96*cmath.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
+        return [ROR, LowerCI, UpperCI]
+
+def getFreq(reports, total):
+    if reports == 0 or total == 0:
+        return 0
+    else:
+        return float(reports) / float(total)
 
 # Returns timestamp filename
 def getOutputFilename(extension):
@@ -242,6 +339,34 @@ def scanAdverseEvents(c):
     update_progress("Scanning adverse events", 1)
     print("Adverse events scanned in", (end - start), "seconds.")
     return (aeMap, aeCounter)
+
+# Returns the following objects
+# outcomeMap: set of preferred terms specified in each primaryid
+# outcomeCounter: counter with frequencies of all outcomes
+def scanOutcomes(c):
+    update_progress("Scanning outcomes", 0)
+    start = timer()
+    outcomeMap = dict()
+    outcomeCounter = Counter()
+    c.execute("SELECT COUNT(*) FROM outcome")
+    total = c.fetchone()[0]
+    counter = 0
+    c.execute("SELECT primaryid, outc_cod FROM outcome")
+    for i in c:
+        primaryid = str(i[0]).lower()
+        oc = str(i[1]).lower().replace('\n', '')
+        outcomeCounter[oc] += 1
+        if primaryid in outcomeMap:
+            outcomeMap[primaryid].add(oc)
+        else:
+            outcomeMap[primaryid] = set([ oc ])
+        counter += 1
+        if counter%20000 == 0:
+            update_progress("Scanning outcomes", (counter/total))
+    end = timer()
+    update_progress("Scanning outcomes", 1)
+    print("Outcomes scanned in", (end - start), "seconds.")
+    return (outcomeMap, outcomeCounter)
 
 def update_progress(message, progress):
     barLength = 30 # Modify this to change the length of the progress bar

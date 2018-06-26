@@ -9,26 +9,29 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseDrugList('./data/testlist.csv')
-    DBHelper.getDrugInfo(c, drugs)
+    drugs = parseFile('./data/input/immunotherapy.csv')
+    indications = parseFile('./data/input/indications.csv')
+    #DBHelper.getDrugAEInfo(c, drugs)
+    DBHelper.getDrugPIDsByIndication(c, ["Nivolumab", "Opdivo"], ["Malignant melanoma"])
+
     
+    # REMEMBER TO ADD ALL DRUGS AS A CATEGORY
 
     # -------END---------
     conn.close()
     print("Disconnected from FAERS database.")
 
-def parseDrugList(file):
-    drugs = dict()
+def parseFile(file):
+    res = dict()
     with open(file) as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             name = row[0]
-            drugs[name] = set()
+            res[name] = set()
             for alias in row:
-                drugs[name].add(alias.lower())
-    print("Parsed drug list.")
-    return drugs
-
+                res[name].add(alias.lower())
+    print("Parsed", file)
+    return res
 
 if __name__ == "__main__":
     main()
