@@ -12,7 +12,8 @@ def main():
     drugs = parseFile('./data/input/test.csv')
     indications = parseFile('./data/input/testindi.csv')
     #DBHelper.getDrugAEInfo(c, drugs)
-    DBHelper.getInfo(c, drugs, indications)
+    info = DBHelper.getInfo(c, drugs, indications)
+    DBHelper.generateReport(info)
 
     
     # REMEMBER TO ADD ALL DRUGS AS A CATEGORY

@@ -1,7 +1,7 @@
 import sys
 
 def update(message, progress):
-    barLength = 30 # Modify this to change the length of the progress bar
+    barLength = 10 # Modify this to change the length of the progress bar
     status = ""
     if isinstance(progress, int):
         progress = float(progress)

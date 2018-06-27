@@ -126,16 +126,61 @@ def getDrugEntries(c, drugs):
     print("Drug entries found in", (end - start), "seconds.")
     return primaryids
 
+def generateReport(info):
+    start = timer()
+    print("Generating report")
+    df_drugInfo = pd.DataFrame(columns=["Drug", "Indication", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)"])
+    df_drug = pd.DataFrame(columns=["Drug", "Indication", "Entries"])
+    drugcounter = 0
+    num_drugs = len(info)
+    for drug, indications in info.items():
+        drugcounter += 1
+        msg = "--Drug (" + str(drugcounter) + "/" + str(num_drugs) + "): " + drug
+        print(msg)
+        total_reports = len(info[drug]['all']['pids'])
+        indicounter = 0
+        num_indis = len(indications)
+        for indi, data in indications.items():
+            indicounter += 1
+            msg = "  --Indication (" + str(indicounter) + "/" + str(num_indis) + "): " + indi
+            num_reports = len(info[drug][indi]['pids'])
+            df_drug.loc[len(df_drug)] = [drug, indi, num_reports]
+            AEs = data['aes']
+            aecounter = 0
+            total_AEs = sum(AEs.values())
+            for ae in AEs:
+                aecounter += AEs[ae]
+                freq = getFreq(AEs[ae], num_reports)
+                prr = data['stats'][ae]['PRR']
+                ror = data['stats'][ae]['ROR']
+                df_drugInfo.loc[len(df_drugInfo)] = [drug, indi, ae, AEs[ae], freq, prr, ror[0], ror[1], ror[2]]
+                prog.update(msg, aecounter/float(total_AEs))
+    filename = getOutputFilename(".xlsx")
+    filename = "./data/" + filename
+    print("Saving report to", filename)
+    writer = pd.ExcelWriter(filename)
+    df_drugInfo.to_excel(writer, "Drug Info")
+    df_drug.to_excel(writer, "Drug Count")
+    writer.save()
+    end = timer()
+    print("Completed in", (end - start), "seconds.")
+
 # info
-# --[*drugname] drug (dict)
-#   --[all] all indications (dict)
-#     --[pids] primaryids (list)
-#     --[aes] adverse events (counter)
-#     --[stats] stats (dict)
-#   --[*indiname] each indication (dict)
-#     --[pids] primaryids (list)
-#     --[aes] adverse events (counter)
-#     --[stats] stats (dict)
+# --[drug] drug (dict)
+#   --['all'] all indications (dict)
+#     --['pids'] primaryids (list)
+#     --['aes'] adverse events (counter)
+#     --['stats'] stats (dict)
+#       --[ae] each AE (dict)
+#         --['PRR']
+#         --['ROR']
+#   --[indi] each indication (dict)
+#     --['pids'] primaryids (list)
+#     --['aes'] adverse events (counter)
+#     --['stats'] stats (dict)
+#       --[ae] each AE (dict)
+#         --['PRR']
+#         --['ROR']
 def getInfo(c, drugmap, indicationmap):
     start = timer()
 
@@ -149,14 +194,15 @@ def getInfo(c, drugmap, indicationmap):
     drugcounter = 0
     info = dict()
     for drug, names in drugmap.items():
-        print("--Drug (" + str(drugcounter) + "/" + str(num_drugs) + "):", drug)
         drugcounter += 1
+        print("--Drug (" + str(drugcounter) + "/" + str(num_drugs) + "):", drug)
         info[drug] = dict()
         print("  --All Indications")
         info[drug]['all'] = getDrugInfo(c, aeMap, names)
         print("    --primaryids:", len(info[drug]['all']['pids']))
         print("    --adverse events: done")
-        info[drug]['all']['stats'] = getAEStats(aeCounter, info[drug]['all']['adverse events'])
+        info[drug]['all']['stats'] = getAEStats(aeCounter, info[drug]['all']['aes'])
+        print("    --stats: done")
         indicounter = 0
         for indi, indi_pts in indicationmap.items():
             indicounter += 1
@@ -164,22 +210,25 @@ def getInfo(c, drugmap, indicationmap):
             info[drug][indi] = getDrugInfoByIndication(c, aeMap, names, indi_pts)
             print("    --primaryids:", len(info[drug][indi]['pids']))
             print("    --adverse events: done")
-            info[drug][indi]['stats'] = getAEStats(aeCounter, info[drug][indi]['adverse events'])
+            info[drug][indi]['stats'] = getAEStats(aeCounter, info[drug][indi]['aes'])
+            print("    --stats: done")
     end = timer()
-    print("Done. Took", (end-start), "seconds.")
-
-    print(info)
+    print("Completed in", (end-start), "seconds.")
+    return info
 
 def getAEStats(totalAEs, drugAEs):
-    stats = dict()
     sum_totalAE = sum(totalAEs.values())
+    stats = dict()
     for ae in drugAEs:
+        stats[ae] = dict()
         sum_drugAE = sum(drugAEs.values())
         var_A = drugAEs[ae] # Event Y for Drug X
         var_B = sum_drugAE - var_A # Other events for Drug X
         var_C = totalAEs[ae] - var_A # Event Y for other drugs
-        var_D = sum_totalAE - var_A - var_B - var_C # Other events for other drugs
-
+        var_D = sum_totalAE - var_A - var_B - var_C # Other events for other drugs\
+        stats[ae]['PRR'] = getPRR(var_A, var_B, var_C, var_D)
+        stats[ae]['ROR'] = getROR(var_A, var_B, var_C, var_D)
+    return stats
 
 # Given specified drugnames / indications
 # Return
