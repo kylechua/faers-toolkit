@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import sys
 import cmath
+import math
 
 import multiprocessing as mp
 import time
@@ -129,7 +130,7 @@ def getDrugEntries(c, drugs):
 def generateReport(info):
     start = timer()
     print("Generating report")
-    df_drugInfo = pd.DataFrame(columns=["Drug", "Indication", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)"])
+    df_drugInfo = pd.DataFrame(columns=["Drug", "Indication", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)", "CI < 1"])
     df_drug = pd.DataFrame(columns=["Drug", "Indication", "Entries"])
     drugcounter = 0
     num_drugs = len(info)
@@ -153,7 +154,13 @@ def generateReport(info):
                 freq = getFreq(AEs[ae], num_reports)
                 prr = data['stats'][ae]['PRR']
                 ror = data['stats'][ae]['ROR']
-                df_drugInfo.loc[len(df_drugInfo)] = [drug, indi, ae, AEs[ae], freq, prr, ror[0], ror[1], ror[2]]
+                ci_valid = False
+                try:
+                    if ((ror[2]-ror[1]) < float(1)):
+                        ci_valid = True
+                except:
+                    ci_valid = False
+                df_drugInfo.loc[len(df_drugInfo)] = [drug, indi, ae, AEs[ae], freq, prr, ror[0], ror[1], ror[2], ci_valid]
                 prog.update(msg, aecounter/float(total_AEs))
     filename = getOutputFilename(".xlsx")
     filename = "./data/" + filename
@@ -240,7 +247,9 @@ def getDrugInfoByIndication(c, aeMap, drugnames, indications):
 
     drugNameQuery = sqlh.selectDrug(drugnames)
     indicationQuery = sqlh.selectIndication(indications)
-    query = drugNameQuery + " INTERSECT " + indicationQuery
+    query = drugNameQuery
+    if not indicationQuery is False:
+        query = query + " INTERSECT " + indicationQuery
     c.execute(query)
     for i in c:
         primaryid = i[0]
@@ -296,7 +305,7 @@ def getDrugAEInfo(c, drugs):
     aeMap = ae[0]
     aeCounter = ae[1]
     total_AEs = sum(aeCounter.values())
-    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)"])
+    df_drugAE = pd.DataFrame(columns=["Drug", "Adverse Event", "Reports", "Frequency", "PRR", "ROR", "CI (Lower 95%)", "CI (Upper 95%)", "CI Interval < 1"])
     df_drug = pd.DataFrame(columns=["Drug", "No. of Total Reports"])
     df_AE = pd.DataFrame(columns=["Adverse Event", "No. of Total Reports"])
     for key, value in primaryids.items():
@@ -316,7 +325,8 @@ def getDrugAEInfo(c, drugs):
             score_Freq = getFreq(drugAEs[adverseEvent], len(value))
             score_PRR = getPRR(var_A, var_B, var_C, var_D)
             score_ROR = getROR(var_A, var_B, var_C, var_D)
-            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent], score_Freq, score_PRR, score_ROR[0], score_ROR[1], score_ROR[2]]
+            ci_interval = (score_ROR[2] - score_ROR[1]) < 1
+            df_drugAE.loc[len(df_drugAE)] = [key, adverseEvent, drugAEs[adverseEvent], score_Freq, score_PRR, score_ROR[0], score_ROR[1], score_ROR[2], ci_interval]
             counter += drugAEs[adverseEvent]
             update_progress(key, (counter/total))
     update_progress("Adding Total AEs", 0)
@@ -403,9 +413,12 @@ def getROR(a, b, c, d):
         return [0, 0, 0]
     else:
         ROR = (a/float(c)) / (b/float(d))
-        UpperCI = cmath.exp( cmath.log(ROR) + 1.96*cmath.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
-        LowerCI = cmath.exp( cmath.log(ROR) - 1.96*cmath.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
-        return [ROR, LowerCI, UpperCI]
+        try:
+            UpperCI = math.exp( math.log(ROR) + 1.96*math.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
+            LowerCI = math.exp( math.log(ROR) - 1.96*math.sqrt( 1/float(a) + 1/float(b) + 1/float(c) + 1/float(d) ) )
+            return [ROR, LowerCI, UpperCI]
+        except:
+            return [ROR, False, False]
 
 def getFreq(reports, total):
     if reports == 0 or total == 0:

@@ -2,20 +2,19 @@ import sqlite3, csv
 from package import dbutils as DBHelper
 
 def main():
-    conn = sqlite3.connect('./data/db/faers-data.sqlite')
+    conn = sqlite3.connect('./db/faers-data.sqlite')
     c = conn.cursor()
     print("Connected to FAERS database.")
     # -------------------
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseFile('./data/input/test.csv')
-    indications = parseFile('./data/input/testindi.csv')
+    drugs = parseFile('./data/input/immunotherapy.csv')
+    indications = parseFile('./data/input/immuno-indications.csv')
     #DBHelper.getDrugAEInfo(c, drugs)
     info = DBHelper.getInfo(c, drugs, indications)
     DBHelper.generateReport(info)
 
-    
     # REMEMBER TO ADD ALL DRUGS AS A CATEGORY
 
     # -------END---------

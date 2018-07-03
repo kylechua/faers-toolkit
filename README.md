@@ -1,29 +1,23 @@
 FAERS Toolkit
 =============
-This repository provides tools for data analysis from the [FDA Adverse Event Reporting System **(FAERS)**](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/). The toolkit accesses FAERS data which is [publicly available online](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/ucm082193.htm), parsed into a SQLite database with **[wizzl35's script](https://github.com/wizzl35/faers-data)**. I am not responsible for any conclusions drawn from the data, nor do I guarantee its efficacy.
+This repository provides tools for data analysis from the [FDA Adverse Event Reporting System **(FAERS)**](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/). The toolkit uses FAERS data which is [publicly available online](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/ucm082193.htm). It is able to parse FAERS (and older AERS) data into a MySQL or sqlite database and analyze it using a parsing module adapted from [wizzl35's script](https://github.com/wizzl35/faers-data). I am not responsible for any conclusions drawn from the data, nor do I guarantee its efficacy.
 
 ### What can FAERS Toolkit do?
+* [Parse AERS/FAERS data into sqlite or MySQL database](#parsing-faers-data)
 * [Remove duplicate entries from data](#removing-duplicate-entries)
 * Calculate signal scores (under construction)
 
-## Getting Started
-
-In order to use FAERS Toolkit, we must set up the database.
-
-First, clone the repository. Next, retrieve the output file 'faers-data.sqlite' by using **[wizzl35's script](https://github.com/wizzl35/faers-data)** and place it in the 'faers-toolkit/data/db/' directory. 
-
-In order to see if the database as been imported correctly, run:
-```python
-python3 test.py
-```
-
-You should see the following output with no errors or any additional outputs.
-```
-Connected to FAERS database.
-Disconnected from FAERS database.
-``` 
-
 ## Using FAERS Toolkit
+### Parsing FAERS data
+To parse FAERS (and AERS) data into a relational database (by default it is sqlite), [download the ASCII zip file](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/) for each quarter of your database and store them in the data folder (e.g. ```faers-toolkit/data/faers_ascii_2018q1.zip```). Next run the parser:
+
+```python
+python3 parse.py
+```
+
+The outputted sqlite database will be saved in ```faers-toolkit/faers-data-sqlite.zip```. To use the database for the other tools, extract the database into the ```faers-toolkit/db/``` folder.
+
+
 ### Removing duplicate entries
 
 We can remove duplicate entries from our database by running the following script:
@@ -32,7 +26,6 @@ We can remove duplicate entries from our database by running the following scrip
 python3 dbcleanup.py
 ```
 
+The FAERS dataset contains cases which have received multiple entries. By the FDA's recommendation, this script removes all old versions of each case. In FAERS, this will consider the "caseid" and "caseversion" attributes and keep only the case with the highest (most recent) version number. In AERS, this will consider the version with the highest "ISR" as the most recent. For cases existing in both FAERS and AERS, the AERS cases are eliminated by default.
 
-The FAERS dataset contains cases which have received multiple entries. This is because each unique submission of a case is added into FAERS, including followup reports from the same patient/drugs/adverse events combination. Thus, we are given multiple versions of each case. By the FDA's recommendation, this script removes all old versions of each case. This leaves only the latest version of each case, which represents the most current information.
-
-Note: This does not account for duplicate entries in that the same report was submitted multiple times (e.g., if both a patient and their doctor submitted a report to FAERS). The existence of these entries is an inherent flaw in FAERS which should be taken into consideration when using FAERS data for statistical analysis.
+Note: This does not account for all duplicate entries in the database. The existence of these entries is an inherent flaw in FAERS which should be taken into consideration when using FAERS data for statistical analysis.

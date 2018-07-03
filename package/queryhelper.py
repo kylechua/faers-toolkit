@@ -25,4 +25,7 @@ def selectIndication(indications):
             first = False
         query += "indication.indi_pt Like '%" + indi + "%'"
     query += ")"
-    return query
+    if (first):
+        return False
+    else:
+        return query
