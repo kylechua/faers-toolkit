@@ -1,5 +1,6 @@
 *.zip
 *.sqlite
+*.sqlite-journal
 *.journal
 *.xlsx
 .vscode/

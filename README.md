@@ -23,9 +23,9 @@ The outputted sqlite database will be saved in ```faers-toolkit/faers-data-sqlit
 We can remove duplicate entries from our database by running the following script:
 
 ```python
-python3 dbcleanup.py
+python3 dedeplicate.py
 ```
 
-The FAERS dataset contains cases which have received multiple entries. By the FDA's recommendation, this script removes all old versions of each case. In FAERS, this will consider the "caseid" and "caseversion" attributes and keep only the case with the highest (most recent) version number. In AERS, this will consider the version with the highest "ISR" as the most recent. For cases existing in both FAERS and AERS, the AERS cases are eliminated by default.
+The FAERS dataset contains cases which have received multiple entries. By the FDA's recommendation, this script removes all old versions of each case. For cases existing in both FAERS and AERS, the AERS cases are eliminated by default. In FAERS, this will consider the "caseid" and "caseversion" attributes and keep only the case with the highest (most recent) version number. In AERS, this will consider the version with the highest "ISR" as the most recent.
 
 Note: This does not account for all duplicate entries in the database. The existence of these entries is an inherent flaw in FAERS which should be taken into consideration when using FAERS data for statistical analysis.
