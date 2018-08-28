@@ -10,3 +10,4 @@ def count_cases(c, table):
 
 def get_tables():
     return ["indication", "drug", "reaction", "source", "therapy", "outcome", "demographic"]
+

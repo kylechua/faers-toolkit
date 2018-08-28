@@ -2,6 +2,5 @@
 *.sqlite
 *.sqlite-journal
 *.journal
-*.xlsx
 .vscode/
 data-1/

@@ -29,3 +29,42 @@ python3 dedeplicate.py
 The FAERS dataset contains cases which have received multiple entries. By the FDA's recommendation, this script removes all old versions of each case. For cases existing in both FAERS and AERS, the AERS cases are eliminated by default. In FAERS, this will consider the "caseid" and "caseversion" attributes and keep only the case with the highest (most recent) version number. In AERS, this will consider the version with the highest "ISR" as the most recent.
 
 Note: This does not account for all duplicate entries in the database. The existence of these entries is an inherent flaw in FAERS which should be taken into consideration when using FAERS data for statistical analysis.
+
+### Calculating Signal Score Reports
+
+1. Specify the drugs to be searched in a .csv file. Write the drug name at the start of each row, and its possible aliases seperated by commas thereafter. An example can be seen in ```faers-toolkit/input/immuno-drugs.csv```
+
+2. Specify the indications to be searched in ```faers-toolkit/input/immuno-indis.csv```. If you do not wish to categorize by indications, ignore this step.
+
+3. In ```faers.py``` edit lines 13 and 14 to include your input files. If you are not categorizing by indications, leave the parameter empty.
+
+When all is set, run the following script:
+
+```python
+python3 faers.py
+```
+
+Depending on the number of parameters, and your computer speed, this script could take anywhere between a couple minutes to a couple of hours to complete.
+
+A drug report will list every given drugs interaction with every adverse event it was reported with, categorized by indication (if specified). It will include frequency stats (e.g. number of reports) as well as basic signal scores such as PRR and ROR. The reports also include the 95% confidence interval of the ROR.
+
+A sample report can be found in the ```/output/``` folder which uses the sample inputs, ```immuno-drugs.csv``` and ```immuno-indis.csv```
+
+By default, the report is saved as a ```.xlsx``` file, but all the information is stored as a dictionary in the ```info``` variable on Line 16 of ```faers.py```. The API for the info dictionary is as follows:
+
+* info
+    * [drug] drug (dict)
+      * ['all'] all indications (dict)
+        * ['pids'] primaryids/isrs (list)
+        * ['aes'] adverse events (counter)
+        * ['stats'] stats (dict)
+            * [ae] each AE (dict)
+            * ['PRR']
+            * ['ROR']
+  * [indi] each indication (dict)
+    * ['pids'] primaryids/isrs (list)
+    * ['aes'] adverse events (counter)
+    * ['stats'] stats (dict)
+      * [ae] each AE (dict)
+        * ['PRR']
+        * ['ROR']

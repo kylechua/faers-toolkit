@@ -1,5 +1,6 @@
 import sqlite3, csv
-from package import dbutils as DBHelper
+
+from package.faers import dbutils as DBHelper
 
 def main():
     conn = sqlite3.connect('./db/faers-data.sqlite')
@@ -9,19 +10,18 @@ def main():
     # YOUR CODE GOES HERE
     # -------BEGIN-------
 
-    drugs = parseFile('./data/input/immunotherapy.csv')
-    indications = parseFile('./data/input/immuno-indications.csv')
-    #DBHelper.getDrugAEInfo(c, drugs)
+    drugs = parseFile('./input/immunotherapy.csv')
+    indications = parseFile('./input/immuno-indications.csv')
+
     info = DBHelper.getInfo(c, drugs, indications)
     DBHelper.generateReport(info)
-
-    # REMEMBER TO ADD ALL DRUGS AS A CATEGORY
 
     # -------END---------
     conn.close()
     print("Disconnected from FAERS database.")
 
-def parseFile(file):
+def parseFile(file=None):
+    if file is None: return False
     res = dict()
     with open(file) as csvfile:
         reader = csv.reader(csvfile)
