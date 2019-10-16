@@ -1,4 +1,4 @@
-FAERS Toolkit
+FAERS Toolkit (Data Mining for Drug Safety)
 =============
 This repository provides tools for data analysis from the [FDA Adverse Event Reporting System **(FAERS)**](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/). The toolkit uses FAERS data which is [publicly available online](https://www.fda.gov/Drugs/GuidanceComplianceRegulatoryInformation/Surveillance/AdverseDrugEffects/ucm082193.htm). It is able to parse FAERS (and older AERS) data into a MySQL or sqlite database and analyze it using a parsing module adapted from [wizzl35's script](https://github.com/wizzl35/faers-data). I am not responsible for any conclusions drawn from the data, nor do I guarantee its efficacy.
 
